@@ -73,6 +73,7 @@ class Settings:
     GRANDMAS_REAL_NUMBER: str = os.environ.get("GRANDMAS_REAL_NUMBER", "")
     PUBLIC_BASE_URL: str = os.environ.get("PUBLIC_BASE_URL", "")
     DEEPGRAM_API_KEY: str = os.environ.get("DEEPGRAM_API_KEY", "")
+    FIREBASE_SERVICE_ACCOUNT_FILE: str = os.environ.get("FIREBASE_SERVICE_ACCOUNT_FILE", "")
 
     @property
     def CLAUDE_CONFIGURED(self) -> bool:
@@ -89,6 +90,10 @@ class Settings:
     @property
     def DEEPGRAM_CONFIGURED(self) -> bool:
         return bool(self.DEEPGRAM_API_KEY)
+
+    @property
+    def FIREBASE_CONFIGURED(self) -> bool:
+        return bool(self.FIREBASE_SERVICE_ACCOUNT_FILE)
 
 
 settings = Settings()

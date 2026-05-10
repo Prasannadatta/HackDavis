@@ -8,6 +8,7 @@ import time
 from app.decision_engine import DecisionEngine
 from app.models import RiskResponse, TranscriptChunk
 from app.mongo_store import mongo_store
+from app.push_notifier import push_notifier
 from app.rule_scorer import RuleScorer
 from app.session_store import SessionState
 
@@ -44,4 +45,6 @@ def process_transcript_chunk(
         response.alert,
     )
     mongo_store.update_session(session)
+    if response.alert:
+        push_notifier.send_scam_alert(session)
     return response

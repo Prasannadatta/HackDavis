@@ -46,6 +46,7 @@ async def health() -> dict:
         "mock_claude": settings.MOCK_CLAUDE,
         "twilio_configured": settings.TWILIO_CONFIGURED,
         "deepgram_configured": settings.DEEPGRAM_CONFIGURED,
+        "firebase_configured": settings.FIREBASE_CONFIGURED,
         "public_base_url_set": bool((settings.PUBLIC_BASE_URL or "").strip()),
     }
 
@@ -207,6 +208,7 @@ async def startup_event() -> None:
     logger.info("CLAUDE_CONFIGURED=%s", str(settings.CLAUDE_CONFIGURED).lower())
     logger.info("TWILIO_CONFIGURED=%s", str(settings.TWILIO_CONFIGURED).lower())
     logger.info("DEEPGRAM_CONFIGURED=%s", str(settings.DEEPGRAM_CONFIGURED).lower())
+    logger.info("FIREBASE_CONFIGURED=%s", str(settings.FIREBASE_CONFIGURED).lower())
     logger.info("PUBLIC_BASE_URL set=%s", str(bool((settings.PUBLIC_BASE_URL or "").strip())).lower())
     logger.info("Mongo persistence %s", "enabled" if mongo_store.is_enabled() else "disabled")
     logger.info("Mock Claude %s", "enabled" if settings.MOCK_CLAUDE else "disabled")

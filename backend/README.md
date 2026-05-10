@@ -72,7 +72,14 @@ MOCK_CLAUDE=false
 ANTHROPIC_API_KEY="your Anthropic API key"
 ```
 
-Step 5: run backend:
+Step 5: for Android FCM scam alerts:
+
+```bash
+FIREBASE_SERVICE_ACCOUNT_FILE="/absolute/path/to/firebase-service-account.json"
+GRANDMAS_REAL_NUMBER="+15555550199"
+```
+
+Step 6: run backend:
 
 ```bash
 uvicorn app.main:app --reload

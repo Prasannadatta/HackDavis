@@ -19,6 +19,31 @@ except ImportError:  # pragma: no cover - keeps app importable before deps are i
 logger = logging.getLogger("scamshield")
 
 
+def normalize_phone_lookup_values(phone: str | None) -> list[str]:
+    if not phone:
+        return []
+
+    raw = phone.strip()
+    digits = re.sub(r"\D", "", raw)
+    values = [raw]
+
+    if digits:
+        values.append(digits)
+        values.append(f"+{digits}")
+        if len(digits) >= 10:
+            last_10 = digits[-10:]
+            values.append(last_10)
+            values.append(f"+1{last_10}")
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        if value and value not in seen:
+            deduped.append(value)
+            seen.add(value)
+    return deduped
+
+
 def _safe_error_message(exc: Exception) -> str:
     message = str(exc)
     if settings.MONGODB_URI:
@@ -55,6 +80,7 @@ class MongoStore:
             self.collection.create_index("dialed_phone")
             self.users_collection = database[settings.MONGODB_USERS_COLLECTION]
             self.users_collection.create_index("google_sub", unique=True)
+            self.users_collection.create_index("dialed_phone")
             self._enabled = True
             self._connected = True
             logger.info("Mongo persistence enabled")
@@ -232,13 +258,34 @@ class MongoStore:
             logger.error("MONGO_ERROR message=%s", _safe_error_message(exc))
             return None
 
+    def get_user_by_dialed_phone(self, dialed_phone: str | None) -> dict | None:
+        if not self.is_enabled():
+            return None
+
+        phone_values = normalize_phone_lookup_values(dialed_phone)
+        if not phone_values:
+            return None
+
+        try:
+            user = self.users_collection.find_one(
+                {
+                    "dialed_phone": {"$in": phone_values},
+                    "push_token": {"$exists": True, "$ne": ""},
+                }
+            )
+            return self._clean_document(user) if user else None
+        except PyMongoError as exc:
+            logger.error("MONGO_ERROR message=%s", _safe_error_message(exc))
+            return None
+
     def get_calls_by_dialed_phone(self, dialed_phone: str, limit: int = 100) -> list[dict]:
         if not self.is_enabled():
             return []
         try:
+            phone_values = normalize_phone_lookup_values(dialed_phone)
             documents = (
                 self.collection.find(
-                    {"dialed_phone": dialed_phone, "status": "ended"},
+                    {"dialed_phone": {"$in": phone_values}, "status": "ended"},
                     {"_id": 0},
                 )
                 .sort("updated_at", DESCENDING)

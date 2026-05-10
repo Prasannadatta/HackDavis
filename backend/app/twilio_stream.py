@@ -105,13 +105,14 @@ def create_twilio_router(rule_scorer: RuleScorer, decision_engine: DecisionEngin
             bool(caller_phone),
             bool(dialed_phone),
         )
+        protected_phone = settings.GRANDMAS_REAL_NUMBER or dialed_phone
 
         vr = VoiceResponse()
         # <Start><Stream> is non-blocking — forks audio to the websocket without blocking
         # call progress, so the <Dial> below executes immediately afterwards.
         stream = vr.start().stream(url=wss_url, track="both_tracks")
         stream.parameter(name="caller_phone", value=caller_phone or "")
-        stream.parameter(name="dialed_phone", value=dialed_phone or "")
+        stream.parameter(name="dialed_phone", value=protected_phone or "")
         # Forward the call to the real destination number. Use the original caller's
         # number as callerId so the recipient sees who is actually calling them.
         if settings.GRANDMAS_REAL_NUMBER:
