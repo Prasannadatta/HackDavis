@@ -45,6 +45,8 @@ async def debug_sessions() -> list[dict]:
     memory_summaries = [
         {
             "session_id": session.session_id,
+            "caller_phone": session.caller_phone,
+            "dialed_phone": session.dialed_phone,
             "created_at": session.created_at.isoformat(),
             "current_score": session.current_score,
             "risk_level": get_risk_level(session.current_score),

@@ -133,6 +133,8 @@ class MongoStore:
                     {
                         "_id": 0,
                         "session_id": 1,
+                        "caller_phone": 1,
+                        "dialed_phone": 1,
                         "created_at": 1,
                         "current_score": 1,
                         "risk_level": 1,
@@ -154,6 +156,8 @@ class MongoStore:
 
         return {
             "session_id": session.session_id,
+            "caller_phone": session.caller_phone,
+            "dialed_phone": session.dialed_phone,
             "created_at": session.created_at,
             "updated_at": session.updated_at,
             "status": session.status,
