@@ -105,6 +105,33 @@ Endpoints:
 - Report: `GET http://localhost:8000/report/{session_id}`
 - Debug sessions: `GET http://localhost:8000/debug/sessions`
 
+## Docker
+
+Build the backend image from this `backend/` directory:
+
+```bash
+docker build -t scamshield-backend .
+```
+
+Run locally with your `.env` file mounted as environment variables:
+
+```bash
+docker run --rm --env-file .env -p 8000:8000 scamshield-backend
+```
+
+Docker must be running locally for `docker build` and `docker run`. On macOS, start Docker Desktop first.
+
+For a safe local demo, make sure `.env` contains:
+
+```bash
+HOST=0.0.0.0
+PORT=8000
+MOCK_CLAUDE=true
+PERSIST_TO_MONGO=false
+```
+
+For hosted deployments, set environment variables in the hosting provider instead of baking secrets into the image. Do not copy real `.env` files into the image.
+
 ## WebSocket Input
 
 Send JSON messages to `/detect`:
