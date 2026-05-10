@@ -141,6 +141,7 @@ export default function Academy() {
   const currentAudioRef = useRef(null)
   const currentAudioUrlRef = useRef(null)
   const currentAudioTypeRef = useRef(null)
+  const submittingAttemptRef = useRef(false)
 
   const redFlags = useMemo(() => scenarioDetail?.red_flags || [], [scenarioDetail])
   const englishOnly = useMemo(() => isEnglishOnlyScenario(scenarioDetail), [scenarioDetail])
@@ -281,9 +282,8 @@ export default function Academy() {
     if (nextLanguage === language) return
     stopCurrentAudio()
     setLanguage(nextLanguage)
-    resetAttemptState()
+    setVoiceMessage('')
     setAudioError('')
-    setError('')
   }
 
   const onVoiceModeChange = (nextVoiceMode) => {
@@ -296,7 +296,8 @@ export default function Academy() {
   }
 
   const submitAnswer = async () => {
-    if (!scenarioDetail || !answerLabel) return
+    if (!scenarioDetail || !answerLabel || submittingAttemptRef.current) return
+    submittingAttemptRef.current = true
     setSubmittingAttempt(true)
     setError('')
     console.info('ACADEMY_ATTEMPT_SUBMIT', {
@@ -324,6 +325,7 @@ export default function Academy() {
     } catch (err) {
       setError(err.message || 'Submit failed.')
     } finally {
+      submittingAttemptRef.current = false
       setSubmittingAttempt(false)
     }
   }
@@ -610,11 +612,14 @@ export default function Academy() {
             {audioError && <p className="text-xs text-red-700 mt-2">{audioError}</p>}
           </div>
 
-          {loadingScenarioDetail ? (
+          {!scenarioDetail && loadingScenarioDetail ? (
             <div className="text-sm text-stone-500 mb-6">Loading scenario...</div>
           ) : scenarioDetail ? (
             <div className="grid xl:grid-cols-3 gap-5">
               <div className="xl:col-span-2 bg-white rounded-2xl border border-stone-100 p-5 md:p-6">
+                {loadingScenarioDetail && (
+                  <p className="text-xs text-stone-400 mb-3">Updating language...</p>
+                )}
                 <div className="flex flex-wrap items-center gap-2 mb-4">
                   <h3 className="text-base font-bold text-stone-900 mr-2">{scenarioDetail.title}</h3>
                   <span className={`text-[11px] px-2 py-1 rounded-full font-semibold ${difficultyTone(scenarioDetail.difficulty)}`}>
