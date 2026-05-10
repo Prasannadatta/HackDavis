@@ -15,6 +15,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
+  Keyboard,
   KeyboardAvoidingView,
   Linking,
   NativeEventEmitter,
@@ -37,7 +39,7 @@ import {
   SafeAreaView,
 } from 'react-native-safe-area-context';
 
-const TWILIO_NUMBER = '(855) 555-0199';
+const TWILIO_NUMBER = '(405) 805-5842';
 const GOOGLE_WEB_CLIENT_ID = '622151238741-uflrd08u48mkdbicer6204ev4gk5022l.apps.googleusercontent.com';
 const SETUP_COMPLETE_KEY = 'setup_complete';
 const USER_REGISTERED_KEY = 'user_registered';
@@ -49,6 +51,7 @@ const SAFE_LIST_COUNT_KEY = 'safe_list_count';
 const PUSH_TOKEN_ENDPOINT = `${BACKEND_HTTP_URL}/api/push-token`;
 const SCAM_ALERT_CHANNEL_ID = 'scam-alerts-urgent-v2';
 const SCAM_ALERT_VIBRATION_PATTERN = [1, 700, 150, 700, 150, 1000];
+const APP_ICON = require('./assets/app-icon.png');
 
 type Screen = 'account' | 'setup' | 'protected' | 'alert';
 type PushStatus =
@@ -555,12 +558,34 @@ function AccountScreen({ onComplete }: { onComplete: () => void }) {
   const [displayName, setDisplayName] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [email, setEmail] = useState('');
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const scrollViewRef = useRef<ScrollView | null>(null);
 
-  function scrollFormIntoView() {
-    requestAnimationFrame(() => {
-      scrollViewRef.current?.scrollToEnd({ animated: true });
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const showSubscription = Keyboard.addListener(showEvent, event => {
+      setKeyboardHeight(event.endCoordinates.height);
+      setTimeout(() => {
+        scrollViewRef.current?.scrollToEnd({ animated: true });
+      }, 80);
     });
+
+    const hideSubscription = Keyboard.addListener(hideEvent, () => {
+      setKeyboardHeight(0);
+    });
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
+
+  function scrollFormIntoView() {
+    setTimeout(() => {
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    }, 120);
   }
 
   async function signInWithGoogle() {
@@ -639,19 +664,22 @@ function AccountScreen({ onComplete }: { onComplete: () => void }) {
         style={styles.keyboardAvoider}>
         <ScrollView
           automaticallyAdjustKeyboardInsets
-          contentContainerStyle={[styles.setupContent, styles.accountContent]}
+          contentContainerStyle={[
+            styles.setupContent,
+            styles.accountContent,
+            { paddingBottom: 180 + keyboardHeight },
+          ]}
           keyboardShouldPersistTaps="handled"
           ref={scrollViewRef}>
-          <View style={styles.brandRow}>
-            <View style={styles.logoMark}>
-              <Text style={styles.logoText}>S</Text>
+          <View style={styles.accountHeroMark}>
+            <View style={styles.accountLogoMark}>
+              <Image source={APP_ICON} style={styles.logoImage} />
             </View>
-            <Text style={styles.brandText}>ScamShield</Text>
+            <Text style={styles.accountBrandText}>ScamShield</Text>
           </View>
 
           <View style={styles.heroBlock}>
-            <Text style={styles.eyebrow}>Account Setup</Text>
-            <Text style={styles.setupTitle}>Protect every call that matters.</Text>
+            <Text style={styles.setupTitle}>Stay ahead of scam calls.</Text>
             <Text style={styles.setupSubtitle}>
               Stay one step ahead of scam callers with instant alerts built for
               the people you care about most.
@@ -709,6 +737,8 @@ function AccountScreen({ onComplete }: { onComplete: () => void }) {
               <Text style={styles.primaryButtonText}>Continue</Text>
             )}
           </Pressable>
+
+          <View style={styles.accountBottomSpacer} />
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -813,7 +843,7 @@ function SetupScreen({ onReady }: { onReady: () => void }) {
       <ScrollView contentContainerStyle={styles.setupContent}>
         <View style={styles.brandRow}>
           <View style={styles.logoMark}>
-            <Text style={styles.logoText}>S</Text>
+            <Image source={APP_ICON} style={styles.logoImage} />
           </View>
           <Text style={styles.brandText}>ScamShield</Text>
         </View>
@@ -956,6 +986,7 @@ function ProtectedScreen({
         <View style={styles.heroCard}>
           <View style={styles.protectedHeroRow}>
             <View style={styles.protectedBadge}>
+              <Image source={APP_ICON} style={styles.protectedIcon} />
               <Text style={styles.protectedBadgeText}>Shield Active</Text>
             </View>
             <View style={styles.signalStack}>
@@ -1101,28 +1132,48 @@ const styles = StyleSheet.create({
   },
   loadingTitle: {
     color: '#1F2A1F',
-    fontSize: 30,
+    fontSize: 26,
     fontWeight: '800',
   },
   loadingBody: {
     color: '#6B7280',
-    fontSize: 16,
-    lineHeight: 24,
+    fontSize: 14,
+    lineHeight: 21,
     textAlign: 'center',
   },
   setupContent: {
     paddingHorizontal: 22,
-    paddingTop: 18,
+    paddingTop: 40,
     paddingBottom: 36,
-    gap: 18,
+    gap: 16,
   },
   accountContent: {
+    paddingTop: 90,
     paddingBottom: 180,
+  },
+  accountBottomSpacer: {
+    height: 15,
+  },
+  accountHeroMark: {
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 4,
   },
   brandRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+  },
+  accountLogoMark: {
+    width: 88,
+    height: 88,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#E3EDE1',
+    borderWidth: 1,
+    borderColor: '#C5D9C2',
+    overflow: 'hidden',
   },
   logoMark: {
     width: 42,
@@ -1133,19 +1184,24 @@ const styles = StyleSheet.create({
     backgroundColor: '#E3EDE1',
     borderWidth: 1,
     borderColor: '#C5D9C2',
+    overflow: 'hidden',
   },
-  logoText: {
-    color: '#284426',
-    fontSize: 22,
-    fontWeight: '900',
+  logoImage: {
+    width: '100%',
+    height: '100%',
   },
   brandText: {
     color: '#284426',
-    fontSize: 20,
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  accountBrandText: {
+    color: '#284426',
+    fontSize: 18,
     fontWeight: '900',
   },
   heroBlock: {
-    gap: 10,
+    gap: 9,
   },
   eyebrow: {
     alignSelf: 'flex-start',
@@ -1157,19 +1213,19 @@ const styles = StyleSheet.create({
   },
   setupTitle: {
     color: '#1F2A1F',
-    fontSize: 34,
-    lineHeight: 40,
+    fontSize: 24,
+    lineHeight: 29,
     fontWeight: '900',
   },
   setupSubtitle: {
     color: '#57534E',
-    fontSize: 16,
-    lineHeight: 24,
+    fontSize: 13,
+    lineHeight: 19,
   },
   panel: {
     borderRadius: 22,
-    padding: 18,
-    gap: 12,
+    padding: 16,
+    gap: 10,
     backgroundColor: '#FEFEFB',
     borderWidth: 1,
     borderColor: '#E7E1D5',
@@ -1181,7 +1237,7 @@ const styles = StyleSheet.create({
   },
   panelLabel: {
     color: '#4E844A',
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '800',
     letterSpacing: 1,
     textTransform: 'uppercase',
@@ -1194,32 +1250,32 @@ const styles = StyleSheet.create({
   numberText: {
     flex: 1,
     color: '#1C1917',
-    fontSize: 30,
-    lineHeight: 36,
+    fontSize: 20,
+    lineHeight: 25,
     fontWeight: '900',
   },
   copyButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 12,
     backgroundColor: '#F4F8F3',
     borderWidth: 1,
     borderColor: '#C5D9C2',
   },
   copyButtonText: {
     color: '#30542E',
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: '800',
   },
   stepText: {
     color: '#44403C',
-    fontSize: 16,
-    lineHeight: 24,
+    fontSize: 13,
+    lineHeight: 19,
   },
   panelBody: {
     color: '#57534E',
-    fontSize: 15,
-    lineHeight: 23,
+    fontSize: 13,
+    lineHeight: 19,
   },
   input: {
     minHeight: 52,
@@ -1228,42 +1284,42 @@ const styles = StyleSheet.create({
     borderColor: '#E7E1D5',
     backgroundColor: '#FAF8F2',
     color: '#1C1917',
-    fontSize: 16,
+    fontSize: 15,
     paddingHorizontal: 14,
   },
   warningText: {
     color: '#B91C1C',
-    fontSize: 15,
-    lineHeight: 22,
+    fontSize: 13,
+    lineHeight: 18,
   },
   successText: {
     color: '#3B6838',
-    fontSize: 15,
-    lineHeight: 22,
+    fontSize: 13,
+    lineHeight: 18,
     fontWeight: '700',
   },
   primaryButton: {
-    minHeight: 54,
-    borderRadius: 18,
+    minHeight: 46,
+    borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#4E844A',
   },
   primaryButtonText: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '900',
   },
   readyButton: {
-    minHeight: 58,
-    borderRadius: 18,
+    minHeight: 48,
+    borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#213821',
   },
   readyButtonText: {
     color: '#FFFFFF',
-    fontSize: 17,
+    fontSize: 14,
     fontWeight: '900',
   },
   demoButton: {
@@ -1286,7 +1342,7 @@ const styles = StyleSheet.create({
   },
   textButtonText: {
     color: '#4E844A',
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: '800',
   },
   disabledButton: {
@@ -1298,9 +1354,9 @@ const styles = StyleSheet.create({
   },
   protectedContent: {
     paddingHorizontal: 22,
-    paddingTop: 18,
+    paddingTop: 28,
     paddingBottom: 32,
-    gap: 18,
+    gap: 16,
   },
   protectedHeader: {
     width: '100%',
@@ -1311,9 +1367,9 @@ const styles = StyleSheet.create({
   },
   protectedTitle: {
     color: '#1F2A1F',
-    fontSize: 32,
+    fontSize: 23,
     fontWeight: '900',
-    marginTop: 6,
+    marginTop: 2,
   },
   statusPill: {
     flexDirection: 'row',
@@ -1344,8 +1400,8 @@ const styles = StyleSheet.create({
   },
   heroCard: {
     borderRadius: 28,
-    paddingHorizontal: 24,
-    paddingVertical: 28,
+    paddingHorizontal: 18,
+    paddingVertical: 20,
     backgroundColor: '#FEFEFB',
     borderWidth: 1,
     borderColor: '#E7E1D5',
@@ -1359,32 +1415,38 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 16,
-    marginBottom: 18,
+    gap: 12,
+    marginBottom: 14,
   },
   protectedBadge: {
     flex: 1,
-    minHeight: 104,
-    borderRadius: 24,
-    paddingHorizontal: 20,
-    paddingVertical: 18,
+    minHeight: 86,
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     backgroundColor: '#F4F8F3',
     borderWidth: 1,
     borderColor: '#C5D9C2',
     justifyContent: 'center',
+    gap: 10,
+  },
+  protectedIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 10,
   },
   protectedBadgeText: {
     color: '#284426',
-    fontSize: 28,
-    lineHeight: 34,
+    fontSize: 18,
+    lineHeight: 23,
     fontWeight: '900',
   },
   signalStack: {
-    width: 92,
-    minHeight: 104,
-    borderRadius: 24,
-    paddingHorizontal: 16,
-    paddingVertical: 16,
+    width: 78,
+    minHeight: 86,
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
     backgroundColor: '#213821',
     alignItems: 'center',
     justifyContent: 'flex-end',
@@ -1392,40 +1454,40 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   signalBarShort: {
-    width: 12,
-    height: 26,
+    width: 10,
+    height: 22,
     borderRadius: 999,
     backgroundColor: '#9DBF99',
   },
   signalBarMid: {
-    width: 12,
-    height: 44,
+    width: 10,
+    height: 36,
     borderRadius: 999,
     backgroundColor: '#6FA06A',
   },
   signalBarTall: {
-    width: 12,
-    height: 66,
+    width: 10,
+    height: 54,
     borderRadius: 999,
     backgroundColor: '#4E844A',
   },
   protectedStatsRow: {
     flexDirection: 'row',
     gap: 12,
-    marginTop: 20,
+    marginTop: 14,
   },
   protectedStatCard: {
     flex: 1,
-    borderRadius: 18,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     backgroundColor: '#FAF8F2',
     borderWidth: 1,
     borderColor: '#E7E1D5',
   },
   protectedStatLabel: {
     color: '#78716C',
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '800',
     letterSpacing: 1,
     textTransform: 'uppercase',
@@ -1433,50 +1495,50 @@ const styles = StyleSheet.create({
   },
   protectedStatValue: {
     color: '#1F2A1F',
-    fontSize: 18,
+    fontSize: 14,
     fontWeight: '800',
   },
   protectedMessage: {
     color: '#1F2A1F',
-    fontSize: 26,
-    lineHeight: 32,
+    fontSize: 19,
+    lineHeight: 24,
     fontWeight: '900',
     textAlign: 'center',
   },
   protectedBody: {
     color: '#57534E',
-    fontSize: 16,
-    lineHeight: 24,
+    fontSize: 13,
+    lineHeight: 19,
     textAlign: 'center',
-    marginTop: 12,
+    marginTop: 8,
   },
   statePanel: {
     width: '100%',
     borderRadius: 22,
-    padding: 18,
-    gap: 8,
+    padding: 16,
+    gap: 6,
     backgroundColor: '#FEFEFB',
     borderWidth: 1,
     borderColor: '#E7E1D5',
   },
   stateValue: {
     color: '#1C1917',
-    fontSize: 18,
+    fontSize: 14,
     fontWeight: '800',
   },
   pushValue: {
     color: '#57534E',
-    fontSize: 15,
-    lineHeight: 22,
+    fontSize: 13,
+    lineHeight: 18,
   },
   footerActions: {
     width: '100%',
     flexDirection: 'column',
-    gap: 12,
+    gap: 8,
   },
   secondaryButton: {
-    minHeight: 52,
-    borderRadius: 18,
+    minHeight: 42,
+    borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#F4F8F3',
@@ -1485,7 +1547,7 @@ const styles = StyleSheet.create({
   },
   secondaryButtonText: {
     color: '#30542E',
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '800',
   },
   urgentOverlay: {
@@ -1531,22 +1593,22 @@ const styles = StyleSheet.create({
   },
   urgentTitle: {
     color: '#FFFFFF',
-    fontSize: 38,
-    lineHeight: 42,
+    fontSize: 32,
+    lineHeight: 36,
     fontWeight: '900',
     marginTop: 8,
   },
   urgentMessage: {
     color: '#FFFFFF',
-    fontSize: 26,
-    lineHeight: 32,
+    fontSize: 22,
+    lineHeight: 28,
     fontWeight: '900',
     marginTop: 8,
   },
   urgentBody: {
     color: '#FFE4E6',
-    fontSize: 16,
-    lineHeight: 22,
+    fontSize: 14,
+    lineHeight: 20,
     fontWeight: '700',
     marginTop: 8,
   },
@@ -1563,7 +1625,7 @@ const styles = StyleSheet.create({
   },
   urgentPrimaryText: {
     color: '#B00016',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '900',
   },
   urgentSecondaryButton: {
@@ -1577,7 +1639,7 @@ const styles = StyleSheet.create({
   },
   urgentSecondaryText: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '900',
   },
   alertScreen: {
@@ -1625,21 +1687,21 @@ const styles = StyleSheet.create({
   },
   alertTitle: {
     color: '#FEF2F2',
-    fontSize: 42,
-    lineHeight: 46,
+    fontSize: 34,
+    lineHeight: 38,
     fontWeight: '900',
     textAlign: 'center',
   },
   alertMessage: {
     color: '#FEF2F2',
-    fontSize: 28,
+    fontSize: 22,
     fontWeight: '900',
     textAlign: 'center',
   },
   alertBody: {
     color: '#FECACA',
-    fontSize: 17,
-    lineHeight: 25,
+    fontSize: 14,
+    lineHeight: 21,
     textAlign: 'center',
   },
   alertButton: {
@@ -1653,7 +1715,7 @@ const styles = StyleSheet.create({
   },
   alertButtonText: {
     color: '#991B1B',
-    fontSize: 17,
+    fontSize: 15,
     fontWeight: '900',
   },
 });
