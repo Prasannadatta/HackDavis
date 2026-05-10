@@ -1,11 +1,12 @@
 import logging
 
 from fastapi import APIRouter, HTTPException, Query, Response
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from app.academy_scenarios import get_scenario_for_language, list_scenario_summaries
 from app.academy_store import academy_store
-from app.elevenlabs_tts import elevenlabs_tts
+from app.elevenlabs_tts import ElevenLabsTTSException, elevenlabs_tts
 
 
 logger = logging.getLogger("scamshield")
@@ -182,8 +183,15 @@ async def get_scenario_audio(body: AcademyScenarioAudioRequest) -> Response:
             language=language,
             voice_mode=body.voice_mode,
         )
-    except RuntimeError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except ElevenLabsTTSException as exc:
+        return JSONResponse(
+            status_code=exc.status_code if exc.status_code >= 400 else 502,
+            content={
+                "detail": "ElevenLabs audio generation failed",
+                "status_code": exc.status_code if exc.status_code >= 400 else 502,
+                "reason": exc.message,
+            },
+        )
 
     logger.info(
         "ELEVENLABS_ACADEMY_SCENARIO_AUDIO_SUCCESS scenario_id=%s bytes=%d",
@@ -222,8 +230,15 @@ async def get_feedback_audio(body: AcademyFeedbackAudioRequest) -> Response:
             language=language,
             voice_mode="safety_explainer",
         )
-    except RuntimeError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except ElevenLabsTTSException as exc:
+        return JSONResponse(
+            status_code=exc.status_code if exc.status_code >= 400 else 502,
+            content={
+                "detail": "ElevenLabs audio generation failed",
+                "status_code": exc.status_code if exc.status_code >= 400 else 502,
+                "reason": exc.message,
+            },
+        )
 
     logger.info("ELEVENLABS_ACADEMY_FEEDBACK_AUDIO_SUCCESS bytes=%d", len(audio_bytes))
     return Response(content=audio_bytes, media_type="audio/mpeg")

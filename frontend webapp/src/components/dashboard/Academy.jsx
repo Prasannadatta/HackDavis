@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, CheckCircle2, Loader2, Play, Volume2, XCircle } from 'lucide-react'
 
 const BACKEND = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000'
@@ -120,10 +120,16 @@ export default function Academy() {
   const [loadingScenarioDetail, setLoadingScenarioDetail] = useState(false)
   const [loadingStats, setLoadingStats] = useState(false)
   const [submittingAttempt, setSubmittingAttempt] = useState(false)
-  const [generatingScenarioAudio, setGeneratingScenarioAudio] = useState(false)
-  const [generatingFeedbackAudio, setGeneratingFeedbackAudio] = useState(false)
+  const [isAudioLoading, setIsAudioLoading] = useState(false)
+  const [currentAudioType, setCurrentAudioType] = useState(null)
+  const [isAudioPlaying, setIsAudioPlaying] = useState(false)
+  const [isAudioPaused, setIsAudioPaused] = useState(false)
   const [error, setError] = useState('')
   const [voiceMessage, setVoiceMessage] = useState('')
+  const [audioError, setAudioError] = useState('')
+
+  const currentAudioRef = useRef(null)
+  const currentAudioUrlRef = useRef(null)
 
   const redFlags = useMemo(() => scenarioDetail?.red_flags || [], [scenarioDetail])
   const englishOnly = useMemo(() => isEnglishOnlyScenario(scenarioDetail), [scenarioDetail])
@@ -142,10 +148,28 @@ export default function Academy() {
     setSelectedFlags([])
     setAttemptResult(null)
     setVoiceMessage('')
-    setGeneratingScenarioAudio(false)
-    setGeneratingFeedbackAudio(false)
     setSubmittingAttempt(false)
   }, [])
+
+  const stopCurrentAudio = useCallback(() => {
+    const previousType = currentAudioType
+    if (currentAudioRef.current) {
+      currentAudioRef.current.pause()
+      currentAudioRef.current.currentTime = 0
+      currentAudioRef.current = null
+    }
+    if (currentAudioUrlRef.current) {
+      URL.revokeObjectURL(currentAudioUrlRef.current)
+      currentAudioUrlRef.current = null
+    }
+    setCurrentAudioType(null)
+    setIsAudioLoading(false)
+    setIsAudioPlaying(false)
+    setIsAudioPaused(false)
+    if (previousType) {
+      console.info('ACADEMY_AUDIO_STOP', { previousType })
+    }
+  }, [currentAudioType])
 
   const fetchStats = useCallback(async () => {
     setLoadingStats(true)
@@ -195,6 +219,12 @@ export default function Academy() {
   }, [])
 
   useEffect(() => {
+    return () => {
+      stopCurrentAudio()
+    }
+  }, [stopCurrentAudio])
+
+  useEffect(() => {
     if (!selectedScenarioId) return
     const controller = new AbortController()
     setLoadingScenarioDetail(true)
@@ -229,17 +259,30 @@ export default function Academy() {
 
   const selectScenario = (scenarioId) => {
     console.info('ACADEMY_SCENARIO_SELECTED', { scenarioId })
+    stopCurrentAudio()
     setSelectedScenarioId(scenarioId)
     resetAttemptState()
+    setAudioError('')
     setError('')
   }
 
   const onLanguageChange = (nextLanguage) => {
     console.info('ACADEMY_LANGUAGE_CHANGED', { language: nextLanguage })
     if (nextLanguage === language) return
+    stopCurrentAudio()
     setLanguage(nextLanguage)
     resetAttemptState()
+    setAudioError('')
     setError('')
+  }
+
+  const onVoiceModeChange = (nextVoiceMode) => {
+    if (nextVoiceMode === voiceMode) return
+    if (currentAudioType === 'scenario') {
+      stopCurrentAudio()
+    }
+    setVoiceMode(nextVoiceMode)
+    setAudioError('')
   }
 
   const submitAnswer = async () => {
@@ -275,79 +318,162 @@ export default function Academy() {
     }
   }
 
-  const playScenarioAudio = async () => {
-    if (!scenarioDetail) return
-    setGeneratingScenarioAudio(true)
+  const playAudioFromEndpoint = useCallback(async (type, endpoint, payload) => {
+    setIsAudioLoading(true)
     setVoiceMessage('')
+    setAudioError('')
     console.info('ACADEMY_AUDIO_REQUEST', {
-      kind: 'scenario',
-      scenarioId: scenarioDetail.scenario_id,
-      language,
-      voiceMode,
+      type,
+      language: payload.language,
+      voiceMode: payload.voice_mode,
     })
+    stopCurrentAudio()
     try {
-      const response = await fetch(`${BACKEND}/academy/audio/scenario`, {
+      const response = await fetch(`${BACKEND}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          scenario_id: scenarioDetail.scenario_id,
-          language,
-          voice_mode: voiceMode,
-        }),
+        body: JSON.stringify(payload),
       })
-      if (response.status === 503) {
-        setVoiceMessage('Voice trainer is unavailable. You can still read the transcript.')
+      const contentType = response.headers.get('content-type', '')
+      console.info('ACADEMY_AUDIO_RESPONSE', { type, status: response.status, contentType })
+
+      if (!response.ok) {
+        let message = `Audio request failed with status ${response.status}.`
+        if (contentType.includes('application/json')) {
+          try {
+            const errBody = await response.json()
+            message = errBody.reason || errBody.detail || message
+          } catch {
+            // Keep default message.
+          }
+        }
+        if (response.status === 503) {
+          setVoiceMessage('Voice trainer is unavailable. You can still read the transcript.')
+        } else {
+          setAudioError(message)
+        }
+        console.info('ACADEMY_AUDIO_ERROR', { message })
         return
       }
-      if (!response.ok) throw new Error('Could not generate scenario audio.')
+
+      if (
+        !contentType.includes('audio/mpeg')
+        && !contentType.includes('audio/mp3')
+        && !contentType.includes('application/octet-stream')
+      ) {
+        const message = `Unexpected audio response type: ${contentType || 'unknown'}`
+        setAudioError(message)
+        console.info('ACADEMY_AUDIO_ERROR', { message })
+        return
+      }
+
       const audioBlob = await response.blob()
-      const audio = new Audio(URL.createObjectURL(audioBlob))
-      void audio.play()
+      if (audioBlob.size < 1000) {
+        const message = 'Audio response was too small or invalid.'
+        setAudioError(message)
+        console.info('ACADEMY_AUDIO_ERROR', { message })
+        return
+      }
+
+      const audioUrl = URL.createObjectURL(audioBlob)
+      const audio = new Audio(audioUrl)
+      currentAudioUrlRef.current = audioUrl
+      currentAudioRef.current = audio
+      setCurrentAudioType(type)
+      setIsAudioPaused(false)
+
+      audio.onplay = () => {
+        setIsAudioPlaying(true)
+        setIsAudioPaused(false)
+        console.info('ACADEMY_AUDIO_PLAY', { type })
+      }
+      audio.onpause = () => {
+        setIsAudioPlaying(false)
+        if (audio.currentTime > 0 && !audio.ended) {
+          setIsAudioPaused(true)
+          console.info('ACADEMY_AUDIO_PAUSE', { type })
+        }
+      }
+      audio.onended = () => {
+        stopCurrentAudio()
+      }
+      audio.onerror = () => {
+        const message = 'Audio playback failed.'
+        setAudioError(message)
+        console.info('ACADEMY_AUDIO_ERROR', { message })
+        stopCurrentAudio()
+      }
+      await audio.play()
     } catch (err) {
-      setVoiceMessage(
-        err?.message || 'Voice trainer is unavailable. You can still read the transcript.'
-      )
+      const message = err?.message || 'Voice trainer is unavailable. You can still read the transcript.'
+      setVoiceMessage(message)
+      setAudioError(message)
+      console.info('ACADEMY_AUDIO_ERROR', { message })
     } finally {
-      setGeneratingScenarioAudio(false)
+      setIsAudioLoading(false)
     }
+  }, [stopCurrentAudio])
+
+  const toggleScenarioAudio = async () => {
+    if (!scenarioDetail) return
+    if (currentAudioType === 'scenario' && currentAudioRef.current) {
+      if (isAudioPlaying) {
+        currentAudioRef.current.pause()
+        return
+      }
+      if (isAudioPaused) {
+        try {
+          await currentAudioRef.current.play()
+        } catch {
+          setAudioError('Unable to resume call audio.')
+        }
+        return
+      }
+    }
+    await playAudioFromEndpoint('scenario', '/academy/audio/scenario', {
+      scenario_id: scenarioDetail.scenario_id,
+      language,
+      voice_mode: voiceMode,
+    })
   }
 
-  const playFeedbackAudio = async () => {
+  const toggleFeedbackAudio = async () => {
     if (!attemptResult) return
-    setGeneratingFeedbackAudio(true)
-    setVoiceMessage('')
-    console.info('ACADEMY_AUDIO_REQUEST', {
-      kind: 'feedback',
-      language,
-      score: attemptResult.score,
-    })
-    try {
-      const response = await fetch(`${BACKEND}/academy/audio/feedback`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          language,
-          score: attemptResult.score,
-          feedback: attemptResult.feedback,
-          safe_action: attemptResult.safe_action,
-        }),
-      })
-      if (response.status === 503) {
-        setVoiceMessage('Voice trainer is unavailable. You can still read the transcript.')
+    if (currentAudioType === 'feedback' && currentAudioRef.current) {
+      if (isAudioPlaying) {
+        currentAudioRef.current.pause()
         return
       }
-      if (!response.ok) throw new Error('Could not generate feedback audio.')
-      const audioBlob = await response.blob()
-      const audio = new Audio(URL.createObjectURL(audioBlob))
-      void audio.play()
-    } catch (err) {
-      setVoiceMessage(
-        err?.message || 'Voice trainer is unavailable. You can still read the transcript.'
-      )
-    } finally {
-      setGeneratingFeedbackAudio(false)
+      if (isAudioPaused) {
+        try {
+          await currentAudioRef.current.play()
+        } catch {
+          setAudioError('Unable to resume feedback audio.')
+        }
+        return
+      }
     }
+    await playAudioFromEndpoint('feedback', '/academy/audio/feedback', {
+      language,
+      score: attemptResult.score,
+      feedback: attemptResult.feedback,
+      safe_action: attemptResult.safe_action,
+    })
   }
+
+  const scenarioAudioButtonText = useMemo(() => {
+    if (isAudioLoading && currentAudioType !== 'feedback') return 'Generating...'
+    if (currentAudioType === 'scenario' && isAudioPlaying) return 'Pause Call'
+    if (currentAudioType === 'scenario' && isAudioPaused) return 'Resume Call'
+    return 'Play Call'
+  }, [currentAudioType, isAudioLoading, isAudioPaused, isAudioPlaying])
+
+  const feedbackAudioButtonText = useMemo(() => {
+    if (isAudioLoading && currentAudioType !== 'scenario') return 'Generating...'
+    if (currentAudioType === 'feedback' && isAudioPlaying) return 'Pause Feedback'
+    if (currentAudioType === 'feedback' && isAudioPaused) return 'Resume Feedback'
+    return 'Play Feedback'
+  }, [currentAudioType, isAudioLoading, isAudioPaused, isAudioPlaying])
 
   return (
     <div className="p-6 md:p-8 max-w-6xl">
@@ -430,8 +556,8 @@ export default function Academy() {
                 <p className="text-xs text-stone-500 mb-1">Voice Mode</p>
                 <select
                   value={voiceMode}
-                  onChange={(e) => setVoiceMode(e.target.value)}
-                  disabled={generatingScenarioAudio}
+                  onChange={(e) => onVoiceModeChange(e.target.value)}
+                  disabled={isAudioLoading}
                   className="w-full h-10 rounded-xl border border-stone-200 px-3 text-sm leading-tight text-stone-700 bg-white disabled:bg-stone-100 disabled:text-stone-500 truncate"
                 >
                   {VOICE_MODE_OPTIONS.map((option) => (
@@ -440,21 +566,21 @@ export default function Academy() {
                 </select>
               </div>
               <button
-                onClick={playScenarioAudio}
-                disabled={generatingScenarioAudio || loadingScenarioDetail || !scenarioDetail}
+                onClick={toggleScenarioAudio}
+                disabled={isAudioLoading || loadingScenarioDetail || !scenarioDetail}
                 className="rounded-xl px-4 py-2.5 bg-sage-600 text-white text-sm font-semibold hover:bg-sage-700 disabled:opacity-60 flex items-center justify-center gap-2"
               >
-                {generatingScenarioAudio ? <Loader2 size={15} className="animate-spin" /> : <Play size={15} />}
-                {generatingScenarioAudio ? 'Generating audio...' : 'Play Call'}
+                {isAudioLoading ? <Loader2 size={15} className="animate-spin" /> : <Play size={15} />}
+                {scenarioAudioButtonText}
               </button>
               {attemptResult ? (
                 <button
-                  onClick={playFeedbackAudio}
-                  disabled={generatingFeedbackAudio}
+                  onClick={toggleFeedbackAudio}
+                  disabled={isAudioLoading}
                   className="rounded-xl px-4 py-2.5 bg-stone-800 text-white text-sm font-semibold hover:bg-stone-900 disabled:opacity-50 flex items-center justify-center gap-2"
                 >
-                  {generatingFeedbackAudio ? <Loader2 size={15} className="animate-spin" /> : <Volume2 size={15} />}
-                  {generatingFeedbackAudio ? 'Generating audio...' : 'Play Feedback'}
+                  {isAudioLoading ? <Loader2 size={15} className="animate-spin" /> : <Volume2 size={15} />}
+                  {feedbackAudioButtonText}
                 </button>
               ) : (
                 <div className="h-10 rounded-xl border border-dashed border-stone-200 text-xs text-stone-400 flex items-center justify-center">
@@ -463,6 +589,7 @@ export default function Academy() {
               )}
             </div>
             {voiceMessage && <p className="text-xs text-amber-700 mt-3">{voiceMessage}</p>}
+            {audioError && <p className="text-xs text-red-700 mt-2">{audioError}</p>}
           </div>
 
           {loadingScenarioDetail ? (

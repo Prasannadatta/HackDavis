@@ -41,20 +41,23 @@ def main() -> int:
     if not scenario_id:
         return fail("selected scenario missing scenario_id")
 
-    scenario_status = test_scenario_audio(scenario_id)
+    scenario_results = []
+    for language in ("en", "hi", "es"):
+        scenario_results.append(test_scenario_audio(scenario_id, language))
     feedback_status = test_feedback_audio()
 
     # PASS when endpoints succeed or gracefully return 503.
-    if scenario_status in {"PASS", "GRACEFUL_UNAVAILABLE"} and feedback_status in {"PASS", "GRACEFUL_UNAVAILABLE"}:
+    scenario_ok = all(status in {"PASS", "GRACEFUL_UNAVAILABLE"} for status in scenario_results)
+    if scenario_ok and feedback_status in {"PASS", "GRACEFUL_UNAVAILABLE"}:
         print("PASS audio tests completed")
         return 0
     return 1
 
 
-def test_scenario_audio(scenario_id: str) -> str:
+def test_scenario_audio(scenario_id: str, language: str) -> str:
     body = {
         "scenario_id": scenario_id,
-        "language": "en",
+        "language": language,
         "voice_mode": "scammer_simulation",
     }
     try:
@@ -63,7 +66,7 @@ def test_scenario_audio(scenario_id: str) -> str:
         print(f"FAIL scenario audio request error={exc}")
         return "FAIL"
 
-    print(f"SCENARIO_AUDIO_STATUS={response.status_code}")
+    print(f"SCENARIO_AUDIO_STATUS={response.status_code} language={language}")
     if response.status_code == 503:
         print("PASS audio gracefully unavailable")
         try:
@@ -73,19 +76,20 @@ def test_scenario_audio(scenario_id: str) -> str:
         return "GRACEFUL_UNAVAILABLE"
 
     if response.status_code != 200:
-        print(f"FAIL scenario audio unexpected status={response.status_code}")
+        print(f"FAIL scenario audio unexpected status={response.status_code} language={language}")
         return "FAIL"
 
     content_type = response.headers.get("content-type", "")
     if "audio/mpeg" not in content_type and "application/octet-stream" not in content_type:
-        print(f"FAIL scenario audio invalid content-type={content_type}")
+        print(f"FAIL scenario audio invalid content-type={content_type} language={language}")
         return "FAIL"
     if len(response.content) <= 1000:
-        print(f"FAIL scenario audio too small bytes={len(response.content)}")
+        print(f"FAIL scenario audio too small bytes={len(response.content)} language={language}")
         return "FAIL"
 
-    Path("academy_test_scenario.mp3").write_bytes(response.content)
-    print(f"PASS audio generated file=academy_test_scenario.mp3 bytes={len(response.content)}")
+    file_name = f"academy_audio_{language}_test.mp3"
+    Path(file_name).write_bytes(response.content)
+    print(f"PASS audio generated file={file_name} bytes={len(response.content)}")
     return "PASS"
 
 
