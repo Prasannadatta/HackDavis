@@ -289,25 +289,49 @@ class MongoStore:
             return False
 
         phone_values = normalize_phone_lookup_values(dialed_phone)
-        if not phone_values or not caller_phone:
+        if not caller_phone:
             return False
 
         try:
-            user = self.users_collection.find_one(
-                {"dialed_phone": {"$in": phone_values}},
-                {"_id": 0, "google_sub": 1, "safe_list_phone_numbers": 1},
-            )
+            user = None
+            lookup_mode = "dialed_phone"
+
+            if phone_values:
+                user = self.users_collection.find_one(
+                    {"dialed_phone": {"$in": phone_values}},
+                    {"_id": 0, "google_sub": 1, "dialed_phone": 1, "safe_list_phone_numbers": 1},
+                )
+
             if not user:
+                fallback_users = list(
+                    self.users_collection.find(
+                        {},
+                        {"_id": 0, "google_sub": 1, "dialed_phone": 1, "safe_list_phone_numbers": 1},
+                    ).limit(2)
+                )
+                if len(fallback_users) == 1:
+                    user = fallback_users[0]
+                    lookup_mode = "single_user_fallback"
+
+            if not user:
+                logger.info(
+                    "SAFE_LIST_LOOKUP dialed_phone=%s caller_phone=%s matched=false reason=no_user lookup_mode=%s",
+                    dialed_phone,
+                    caller_phone,
+                    lookup_mode,
+                )
                 return False
 
             safe_list_phone_numbers = user.get("safe_list_phone_numbers") or []
             is_safe = any(phone_values_overlap(stored_phone, caller_phone) for stored_phone in safe_list_phone_numbers)
             logger.info(
-                "SAFE_LIST_LOOKUP dialed_phone=%s caller_phone=%s matched=%s safe_list_count=%d",
+                "SAFE_LIST_LOOKUP dialed_phone=%s caller_phone=%s matched=%s safe_list_count=%d lookup_mode=%s user_dialed_phone=%s",
                 dialed_phone,
                 caller_phone,
                 is_safe,
                 len(safe_list_phone_numbers),
+                lookup_mode,
+                user.get("dialed_phone"),
             )
             return is_safe
         except PyMongoError as exc:
