@@ -1,9 +1,9 @@
 import { motion } from 'framer-motion'
-import { ShieldCheck, PhoneCall, AlertTriangle, TrendingUp } from 'lucide-react'
+import { ShieldCheck, PhoneCall, AlertTriangle, Brain, Bell } from 'lucide-react'
 import RiskBadge from './RiskBadge'
 
 function fmt(ts) {
-  return new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  return new Date(ts).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 function fmtDuration(s) {
   if (s < 60) return `${s}s`
@@ -31,17 +31,21 @@ function Sparkline({ data, color }) {
 }
 
 export default function Overview({ calls, onSelectCall }) {
-  const isScam  = (c) => c.is_scam ?? c.latest_claude_result?.is_scam ?? false
-  const total   = calls.length
-  const scams   = calls.filter(isScam).length
-  const safe    = total - scams
-  const pctSafe = total ? Math.round((safe / total) * 100) : 0
+  const isScam      = (c) => c.is_scam ?? c.latest_claude_result?.is_scam ?? false
+  const total       = calls.length
+  const scamCalls   = calls.filter(isScam)
+  const scams       = scamCalls.length
+  const safe        = total - scams
+  const alerts      = scamCalls.filter(c => c.alert_triggered).length
+  const alertRate   = scams > 0 ? `${alerts}/${scams}` : '—'
+  const confidences = scamCalls.map(c => c.latest_claude_result?.confidence).filter(v => v != null)
+  const avgConf     = confidences.length > 0 ? `${Math.round(confidences.reduce((a, b) => a + b, 0) / confidences.length)}%` : '—'
 
   const stats = [
-    { label: 'Total Calls',    value: total,      icon: PhoneCall,      color: 'text-stone-600',  bg: 'bg-stone-100' },
-    { label: 'Scams Caught',   value: scams,       icon: AlertTriangle,  color: 'text-red-600',    bg: 'bg-red-50' },
-    { label: 'Safe Calls',     value: safe,        icon: ShieldCheck,    color: 'text-sage-600',   bg: 'bg-sage-50' },
-    { label: 'Protection Rate',value: `${pctSafe}%`, icon: TrendingUp,   color: 'text-violet-600', bg: 'bg-violet-50' },
+    { label: 'Total Calls',     value: total,    icon: PhoneCall,     color: 'text-stone-600', bg: 'bg-stone-100' },
+    { label: 'Scams Caught',    value: scams,    icon: AlertTriangle, color: 'text-red-600',   bg: 'bg-red-50'    },
+    { label: 'Avg Confidence',  value: avgConf,  icon: Brain,         color: 'text-violet-600',bg: 'bg-violet-50' },
+    { label: 'Alerts Triggered',value: alertRate,icon: Bell,          color: 'text-amber-600', bg: 'bg-amber-50'  },
   ]
 
   return (

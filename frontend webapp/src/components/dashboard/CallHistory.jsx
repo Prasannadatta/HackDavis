@@ -4,7 +4,7 @@ import { Search } from 'lucide-react'
 import RiskBadge from './RiskBadge'
 
 function fmt(ts) {
-  return new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+  return new Date(ts).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 function fmtDuration(s) {
   if (s < 60) return `${s}s`

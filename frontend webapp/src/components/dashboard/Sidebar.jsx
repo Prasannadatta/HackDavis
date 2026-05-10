@@ -1,7 +1,15 @@
 import { LayoutDashboard, PhoneCall, Users, Settings, LogOut } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import ShieldLogo from '../ShieldLogo'
-import { mockUser } from '../../data/mockCalls' // TODO: replace with auth context
+
+function getUser() {
+  try {
+    const stored = localStorage.getItem('scamshield_user')
+    return stored ? JSON.parse(stored) : null
+  } catch {
+    return null
+  }
+}
 
 const navItems = [
   { id: 'overview', label: 'Overview',     icon: LayoutDashboard },
@@ -11,6 +19,15 @@ const navItems = [
 ]
 
 export default function Sidebar({ activePage, onNavigate }) {
+  const user = getUser()
+  const displayName = user?.name || 'Guest'
+  const displayEmail = user?.email || ''
+  const initial = displayName.charAt(0).toUpperCase()
+
+  const handleSignOut = () => {
+    localStorage.removeItem('scamshield_user')
+  }
+
   return (
     <aside className="w-56 shrink-0 h-screen bg-white border-r border-stone-100 flex flex-col">
       {/* Logo */}
@@ -46,17 +63,16 @@ export default function Sidebar({ activePage, onNavigate }) {
       <div className="px-3 py-4 border-t border-stone-100">
         <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl">
           <div className="w-7 h-7 bg-sage-100 rounded-full flex items-center justify-center shrink-0">
-            <span className="text-xs font-bold text-sage-700">
-              {mockUser.name.charAt(0)} {/* TODO: use Google profile picture */}
-            </span>
+            <span className="text-xs font-bold text-sage-700">{initial}</span>
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-xs font-semibold text-stone-700 truncate">{mockUser.name}</p>
-            <p className="text-[10px] text-stone-400 truncate">{mockUser.email}</p>
+            <p className="text-xs font-semibold text-stone-700 truncate">{displayName}</p>
+            <p className="text-[10px] text-stone-400 truncate">{displayEmail}</p>
           </div>
         </div>
         <Link
           to="/"
+          onClick={handleSignOut}
           className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold text-stone-400 hover:text-stone-600 hover:bg-stone-50 transition-all mt-0.5"
         >
           <LogOut size={13} />

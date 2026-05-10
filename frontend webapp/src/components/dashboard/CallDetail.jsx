@@ -17,6 +17,7 @@ function fmt(ts) {
   return new Date(ts).toLocaleString('en-US', {
     weekday: 'short', month: 'short', day: 'numeric',
     hour: '2-digit', minute: '2-digit',
+    timeZoneName: 'short',
   })
 }
 

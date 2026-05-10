@@ -57,7 +57,7 @@ export default function Dashboard() {
 
   const pageProps = { calls, onSelectCall: setSelectedCall }
 
-  const mainContent = () => {
+  const callsContent = () => {
     if (loading) {
       return (
         <div className="flex items-center justify-center h-full">
@@ -110,10 +110,14 @@ export default function Dashboard() {
       <>
         {page === 'overview' && <Overview {...pageProps} />}
         {page === 'history'  && <CallHistory {...pageProps} />}
-        {page === 'family'   && <Family />}
-        {page === 'settings' && <Settings />}
       </>
     )
+  }
+
+  const mainContent = () => {
+    if (page === 'family')   return <Family />
+    if (page === 'settings') return <Settings />
+    return callsContent()
   }
 
   return (
