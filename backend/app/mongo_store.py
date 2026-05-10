@@ -52,6 +52,9 @@ class MongoStore:
             self.collection = database[settings.MONGODB_COLLECTION]
             self.collection.create_index("session_id", unique=True)
             self.collection.create_index("updated_at")
+            self.collection.create_index("dialed_phone")
+            self.users_collection = database[settings.MONGODB_USERS_COLLECTION]
+            self.users_collection.create_index("google_sub", unique=True)
             self._enabled = True
             self._connected = True
             logger.info("Mongo persistence enabled")
@@ -146,6 +149,49 @@ class MongoStore:
                 .limit(limit)
             )
             return [self._json_safe(document) for document in documents]
+        except PyMongoError as exc:
+            logger.error("MONGO_ERROR message=%s", _safe_error_message(exc))
+            return []
+
+    def register_user(self, google_sub: str, dialed_phone: str) -> None:
+        if not self.is_enabled():
+            return
+        try:
+            self.users_collection.update_one(
+                {"google_sub": google_sub},
+                {
+                    "$set": {"dialed_phone": dialed_phone, "updated_at": datetime.now(timezone.utc)},
+                    "$setOnInsert": {"created_at": datetime.now(timezone.utc)},
+                },
+                upsert=True,
+            )
+            logger.info("USER_REGISTERED google_sub=%s", google_sub)
+        except PyMongoError as exc:
+            logger.error("MONGO_ERROR message=%s", _safe_error_message(exc))
+
+    def get_user_by_sub(self, google_sub: str) -> dict | None:
+        if not self.is_enabled():
+            return None
+        try:
+            user = self.users_collection.find_one({"google_sub": google_sub})
+            return self._clean_document(user) if user else None
+        except PyMongoError as exc:
+            logger.error("MONGO_ERROR message=%s", _safe_error_message(exc))
+            return None
+
+    def get_calls_by_dialed_phone(self, dialed_phone: str, limit: int = 100) -> list[dict]:
+        if not self.is_enabled():
+            return []
+        try:
+            documents = (
+                self.collection.find(
+                    {"dialed_phone": dialed_phone, "status": "ended"},
+                    {"_id": 0},
+                )
+                .sort("updated_at", DESCENDING)
+                .limit(limit)
+            )
+            return [self._json_safe(doc) for doc in documents]
         except PyMongoError as exc:
             logger.error("MONGO_ERROR message=%s", _safe_error_message(exc))
             return []
