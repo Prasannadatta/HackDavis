@@ -149,38 +149,55 @@ def create_twilio_router(rule_scorer: RuleScorer, decision_engine: DecisionEngin
             return
 
         dg_client = DeepgramClient(settings.DEEPGRAM_API_KEY)
-        dg_connection = dg_client.listen.asyncwebsocket.v("1")
+        # Two separate Deepgram connections — one per track — so each receives a
+        # clean mono audio stream. Mixing both tracks into one connection garbles both.
+        dg_inbound  = dg_client.listen.asyncwebsocket.v("1")
+        dg_outbound = dg_client.listen.asyncwebsocket.v("1")
 
         session = None
         call_sid: str | None = None
         stream_started = asyncio.Event()
 
-        async def on_transcript(_conn: object, **kwargs: object) -> None:
-            nonlocal session
-            result = kwargs.get("result")
-            if not isinstance(result, LiveResultResponse) or session is None:
-                return
-            if not result.is_final:
-                return
-            ch = result.channel
-            if not ch.alternatives:
-                return
-            text = (ch.alternatives[0].transcript or "").strip()
-            if not text:
-                return
-            logger.info(
-                "DEEPGRAM_FINAL session_id=%s text_len=%d",
-                session.session_id,
-                len(text),
-            )
-            process_transcript_chunk(
-                session,
-                text,
-                rule_scorer=rule_scorer,
-                decision_engine=decision_engine,
-            )
+        def _make_on_transcript(track_label: str):
+            async def on_transcript(_conn: object, **kwargs: object) -> None:
+                nonlocal session
+                result = kwargs.get("result")
+                if not isinstance(result, LiveResultResponse) or session is None:
+                    return
+                if not result.is_final:
+                    return
+                ch = result.channel
+                if not ch.alternatives:
+                    return
+                text = (ch.alternatives[0].transcript or "").strip()
+                if not text:
+                    return
+                logger.info(
+                    "DEEPGRAM_FINAL session_id=%s track=%s text_len=%d",
+                    session.session_id,
+                    track_label,
+                    len(text),
+                )
+                process_transcript_chunk(
+                    session,
+                    text,
+                    rule_scorer=rule_scorer,
+                    decision_engine=decision_engine,
+                )
+            return on_transcript
 
-        dg_connection.on(LiveTranscriptionEvents.Transcript, on_transcript)
+        dg_inbound.on(LiveTranscriptionEvents.Transcript,  _make_on_transcript("inbound"))
+        dg_outbound.on(LiveTranscriptionEvents.Transcript, _make_on_transcript("outbound"))
+
+        dg_opts = LiveOptions(
+            model="nova-2",
+            encoding="mulaw",
+            sample_rate=8000,
+            channels=1,
+            interim_results=False,
+            punctuate=True,
+            endpointing="300",
+        )
 
         try:
             while True:
@@ -238,18 +255,10 @@ def create_twilio_router(rule_scorer: RuleScorer, decision_engine: DecisionEngin
                         bool(session.dialed_phone),
                     )
 
-                    opts = LiveOptions(
-                        model="nova-2",
-                        encoding="mulaw",
-                        sample_rate=8000,
-                        channels=1,
-                        interim_results=False,
-                        punctuate=True,
-                        endpointing="300",
-                    )
-                    ok = await dg_connection.start(opts)
-                    if not ok:
-                        logger.error("DEEPGRAM_START_FAILED call_sid=%s", call_sid)
+                    ok_in  = await dg_inbound.start(dg_opts)
+                    ok_out = await dg_outbound.start(dg_opts)
+                    if not ok_in or not ok_out:
+                        logger.error("DEEPGRAM_START_FAILED call_sid=%s ok_in=%s ok_out=%s", call_sid, ok_in, ok_out)
                         break
                     stream_started.set()
                     continue
@@ -266,7 +275,11 @@ def create_twilio_router(rule_scorer: RuleScorer, decision_engine: DecisionEngin
                         audio = base64.b64decode(payload_b64)
                     except (ValueError, TypeError):
                         continue
-                    await dg_connection.send(audio)
+                    # Route each track to its own dedicated Deepgram connection
+                    if track == "outbound":
+                        await dg_outbound.send(audio)
+                    else:
+                        await dg_inbound.send(audio)
                     continue
 
                 if event == "stop":
@@ -276,10 +289,11 @@ def create_twilio_router(rule_scorer: RuleScorer, decision_engine: DecisionEngin
         except WebSocketDisconnect:
             logger.info("TWILIO_MEDIA_WS_DISCONNECT call_sid=%s", call_sid)
         finally:
-            try:
-                await dg_connection.finish()
-            except Exception as exc:  # pylint: disable=broad-except
-                logger.warning("DEEPGRAM_FINISH_ERROR err=%s", exc)
+            for conn in (dg_inbound, dg_outbound):
+                try:
+                    await conn.finish()
+                except Exception as exc:  # pylint: disable=broad-except
+                    logger.warning("DEEPGRAM_FINISH_ERROR err=%s", exc)
             if session is not None:
                 session.status = "ended"
                 mongo_store.mark_session_ended(session.session_id)
